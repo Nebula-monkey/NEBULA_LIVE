@@ -1,0 +1,38 @@
+name: Diagnose VPS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Diagnose
+      env:
+        VPS_HOST: ${{ secrets.VPS_HOST }}
+        VPS_USER: ${{ secrets.VPS_USER }}
+        VPS_PASS: ${{ secrets.VPS_PASS }}
+      run: |
+        sudo apt-get install -y sshpass
+        
+        sshpass -p "$VPS_PASS" ssh -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST << 'EOF'
+        echo "=== pm2 env (MEDIASOUP/NODE_IP/PORT) ==="
+        pm2 env 0 | grep -E "MEDIASOUP|NODE_IP|PORT" || echo "(no matching env vars!)"
+        
+        echo ""
+        echo "=== pm2 logs last 60 lines ==="
+        pm2 logs live-platform --lines 60 --nostream
+        
+        echo ""
+        echo "=== UDP listening ports (10000-10100) ==="
+        ss -ulnp | grep -E "100[0-9][0-9]" | head -20
+        
+        echo ""
+        echo "=== TCP listening ports ==="
+        ss -tlnp | head -15
+        
+        echo ""
+        echo "=== iptables/firewall ==="
+        iptables -L INPUT -n 2>/dev/null | head -15 || echo "(no iptables access)"
+        EOF
