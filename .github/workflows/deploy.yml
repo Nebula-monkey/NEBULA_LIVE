@@ -52,6 +52,10 @@ jobs:
             npm install -g pm2
         fi
         
+        # Install build dependencies for mediasoup
+        echo "Installing build dependencies..."
+        apt-get install -y python3-pip build-essential pkg-config
+        
         # Create project directory
         mkdir -p /opt/live-platform
         cd /opt/live-platform
@@ -72,31 +76,8 @@ jobs:
         cd server
         npm install --registry=https://registry.npmmirror.com
         
-        # Download mediasoup worker for Debian 12
-        echo "Setting up mediasoup worker..."
-        MEDIASOUP_VERSION=$(node -e "console.log(require('./node_modules/mediasoup/package.json').version)")
-        WORKER_DIR="node_modules/mediasoup/worker/out/Release"
-        mkdir -p "$WORKER_DIR"
-        
-        # Get kernel version for mediasoup
-        KERNEL_VERSION=$(uname -r | cut -d'-' -f1)
-        echo "Kernel version: $KERNEL_VERSION"
-        
-        # Download mediasoup worker
-        WORKER_URL="https://github.com/nicowillis/mediasoup-prebuilt/releases/download/${MEDIASOUP_VERSION}/mediasoup-worker-linux-x64-${KERNEL_VERSION}.tgz"
-        echo "Trying to download worker from: $WORKER_URL"
-        
-        if curl -fsSL "$WORKER_URL" -o /tmp/mediasoup-worker.tgz 2>/dev/null; then
-            echo "Downloaded worker successfully"
-            tar -xzf /tmp/mediasoup-worker.tgz -C "$WORKER_DIR"
-            chmod +x "$WORKER_DIR/mediasoup-worker"
-        else
-            echo "Failed to download prebuilt worker, trying to build..."
-            cd node_modules/mediasoup/worker
-            npm install
-            make
-            cd /opt/live-platform/server
-        fi
+        # mediasoup worker will be built automatically during npm install
+        # since we have python3-pip and build-essential installed
         
         cd /opt/live-platform
         
