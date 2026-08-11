@@ -81,8 +81,8 @@ jobs:
         
         # Deploy to /opt/live-platform
         mkdir -p /opt/live-platform
-        rm -rf /opt/live-platform/frontend /opt/live-platform/server
-        cp -r /tmp/frontend /opt/live-platform/frontend
+        rm -rf /opt/live-platform/live-stream-platform /opt/live-platform/server
+        cp -r /tmp/frontend /opt/live-platform/live-stream-platform
         cp -r /tmp/backend /opt/live-platform/server
         
         # Create required directories
