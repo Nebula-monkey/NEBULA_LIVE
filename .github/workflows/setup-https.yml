@@ -29,7 +29,7 @@ jobs:
         cat > /etc/nginx/sites-available/live-platform << 'NGINX_CONF'
         server {
             listen 80;
-            server_name 100111000.xyz www.100111000.xyz;
+            server_name 100111000.xyz;
             
             location / {
                 proxy_pass http://127.0.0.1:3001;
@@ -55,7 +55,7 @@ jobs:
         systemctl reload nginx
         
         echo "=== Obtaining SSL certificate ==="
-        certbot --nginx -d 100111000.xyz -d www.100111000.xyz --non-interactive --agree-tos -m 18717798515@163.com --redirect
+        certbot --nginx -d 100111000.xyz --non-interactive --agree-tos -m 18717798515@163.com --redirect
         
         echo "=== Done ==="
         certbot certificates
