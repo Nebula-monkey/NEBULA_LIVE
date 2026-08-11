@@ -1,0 +1,133 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [master, server-master]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout frontend
+      uses: actions/checkout@v4
+      with:
+        ref: master
+        path: frontend
+    
+    - name: Checkout backend
+      uses: actions/checkout@v4
+      with:
+        ref: server-master
+        path: backend
+    
+    - name: Deploy to VPS
+      env:
+        VPS_HOST: ${{ secrets.VPS_HOST }}
+        VPS_USER: ${{ secrets.VPS_USER }}
+        VPS_PASS: ${{ secrets.VPS_PASS }}
+      run: |
+        # Install sshpass
+        sudo apt-get update
+        sudo apt-get install -y sshpass
+        
+        # Create deployment script on VPS
+        cat > /tmp/deploy.sh << 'DEPLOY_SCRIPT'
+        #!/bin/bash
+        set -e
+        
+        echo "=== Starting deployment ==="
+        
+        # Install Node.js 22 if not installed
+        if ! command -v node &> /dev/null || [[ $(node -v) != v22* ]]; then
+            echo "Installing Node.js 22..."
+            curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+            apt-get install -y nodejs
+        fi
+        
+        # Install pm2 if not installed
+        if ! command -v pm2 &> /dev/null; then
+            echo "Installing pm2..."
+            npm install -g pm2
+        fi
+        
+        # Create project directory
+        mkdir -p /opt/live-platform
+        cd /opt/live-platform
+        
+        # Copy frontend from /tmp
+        echo "Deploying frontend..."
+        rm -rf frontend
+        cp -r /tmp/frontend .
+        cd frontend
+        npm install --registry=https://registry.npmmirror.com
+        npm run build
+        cd ..
+        
+        # Copy backend from /tmp
+        echo "Deploying backend..."
+        rm -rf server
+        cp -r /tmp/backend .
+        cd server
+        npm install --registry=https://registry.npmmirror.com
+        
+        # Download mediasoup worker for Debian 12
+        echo "Setting up mediasoup worker..."
+        MEDIASOUP_VERSION=$(node -e "console.log(require('./node_modules/mediasoup/package.json').version)")
+        WORKER_DIR="node_modules/mediasoup/worker/out/Release"
+        mkdir -p "$WORKER_DIR"
+        
+        # Get kernel version for mediasoup
+        KERNEL_VERSION=$(uname -r | cut -d'-' -f1)
+        echo "Kernel version: $KERNEL_VERSION"
+        
+        # Download mediasoup worker
+        WORKER_URL="https://github.com/nicowillis/mediasoup-prebuilt/releases/download/${MEDIASOUP_VERSION}/mediasoup-worker-linux-x64-${KERNEL_VERSION}.tgz"
+        echo "Trying to download worker from: $WORKER_URL"
+        
+        if curl -fsSL "$WORKER_URL" -o /tmp/mediasoup-worker.tgz 2>/dev/null; then
+            echo "Downloaded worker successfully"
+            tar -xzf /tmp/mediasoup-worker.tgz -C "$WORKER_DIR"
+            chmod +x "$WORKER_DIR/mediasoup-worker"
+        else
+            echo "Failed to download prebuilt worker, trying to build..."
+            cd node_modules/mediasoup/worker
+            npm install
+            make
+            cd /opt/live-platform/server
+        fi
+        
+        cd /opt/live-platform
+        
+        # Stop existing pm2 process
+        pm2 delete live-platform 2>/dev/null || true
+        
+        # Start with pm2
+        echo "Starting application..."
+        cd /opt/live-platform/server
+        export MEDIASOUP_ANNOUNCED_IP=$(curl -s ifconfig.me)
+        export NODE_IP=0.0.0.0
+        export PORT=3001
+        
+        pm2 start index.js --name live-platform
+        pm2 save
+        pm2 startup systemd -u root --hp /root
+        
+        echo "=== Deployment complete ==="
+        echo "Application running on port 3001"
+        DEPLOY_SCRIPT
+        
+        # Copy files to VPS
+        echo "Uploading frontend to VPS..."
+        sshpass -p "$VPS_PASS" scp -o StrictHostKeyChecking=no -r ./frontend $VPS_USER@$VPS_HOST:/tmp/frontend
+        
+        echo "Uploading backend to VPS..."
+        sshpass -p "$VPS_PASS" scp -o StrictHostKeyChecking=no -r ./backend $VPS_USER@$VPS_HOST:/tmp/backend
+        
+        echo "Uploading deploy script..."
+        sshpass -p "$VPS_PASS" scp -o StrictHostKeyChecking=no /tmp/deploy.sh $VPS_USER@$VPS_HOST:/tmp/deploy.sh
+        
+        # Run deployment
+        echo "Running deployment on VPS..."
+        sshpass -p "$VPS_PASS" ssh -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST "bash /tmp/deploy.sh"
