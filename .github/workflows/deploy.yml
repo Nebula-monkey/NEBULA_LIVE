@@ -68,7 +68,7 @@ jobs:
         # Copy backend from /tmp
         echo "Deploying backend..."
         rm -rf server
-        cp -r /tmp/backend .
+        cp -r /tmp/backend server
         cd server
         npm install --registry=https://registry.npmmirror.com
         
