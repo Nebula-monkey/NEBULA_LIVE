@@ -22,19 +22,41 @@ jobs:
         ref: server-master
         path: backend
     
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    
+    - name: Build frontend
+      run: |
+        cd frontend
+        npm install
+        npm run build
+    
+    - name: Install backend deps (compile mediasoup here)
+      run: |
+        cd backend
+        npm install
+    
+    - name: Package everything
+      run: |
+        tar -czf /tmp/deploy-package.tar.gz frontend backend
+    
     - name: Deploy to VPS
       env:
         VPS_HOST: ${{ secrets.VPS_HOST }}
         VPS_USER: ${{ secrets.VPS_USER }}
         VPS_PASS: ${{ secrets.VPS_PASS }}
       run: |
-        # Install sshpass
-        sudo apt-get update
         sudo apt-get install -y sshpass
         
-        # Create deployment script on VPS
-        cat > /tmp/deploy.sh << 'DEPLOY_SCRIPT'
-        #!/bin/bash
+        # Upload package to VPS
+        echo "Uploading package to VPS..."
+        sshpass -p "$VPS_PASS" scp -o StrictHostKeyChecking=no /tmp/deploy-package.tar.gz $VPS_USER@$VPS_HOST:/tmp/deploy-package.tar.gz
+        
+        # Run deployment on VPS
+        echo "Running deployment..."
+        sshpass -p "$VPS_PASS" ssh -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST << 'EOF'
         set -e
         
         echo "=== Starting deployment ==="
@@ -52,34 +74,16 @@ jobs:
             npm install -g pm2
         fi
         
-        # Install build dependencies for mediasoup
-        echo "Installing build dependencies..."
-        apt-get install -y python3-pip build-essential pkg-config
+        # Extract package
+        echo "Extracting files..."
+        cd /tmp
+        tar -xzf deploy-package.tar.gz
         
-        # Create project directory
+        # Deploy to /opt/live-platform
         mkdir -p /opt/live-platform
-        cd /opt/live-platform
-        
-        # Copy frontend from /tmp
-        echo "Deploying frontend..."
-        rm -rf frontend
-        cp -r /tmp/frontend .
-        cd frontend
-        npm install --registry=https://registry.npmmirror.com
-        npm run build
-        cd ..
-        
-        # Copy backend from /tmp
-        echo "Deploying backend..."
-        rm -rf server
-        cp -r /tmp/backend server
-        cd server
-        npm install --registry=https://registry.npmmirror.com
-        
-        # mediasoup worker will be built automatically during npm install
-        # since we have python3-pip and build-essential installed
-        
-        cd /opt/live-platform
+        rm -rf /opt/live-platform/frontend /opt/live-platform/server
+        cp -r /tmp/frontend /opt/live-platform/frontend
+        cp -r /tmp/backend /opt/live-platform/server
         
         # Stop existing pm2 process
         pm2 delete live-platform 2>/dev/null || true
@@ -93,22 +97,8 @@ jobs:
         
         pm2 start index.js --name live-platform
         pm2 save
-        pm2 startup systemd -u root --hp /root
+        pm2 startup systemd -u root --hp /root 2>/dev/null || true
         
         echo "=== Deployment complete ==="
-        echo "Application running on port 3001"
-        DEPLOY_SCRIPT
-        
-        # Copy files to VPS
-        echo "Uploading frontend to VPS..."
-        sshpass -p "$VPS_PASS" scp -o StrictHostKeyChecking=no -r ./frontend $VPS_USER@$VPS_HOST:/tmp/frontend
-        
-        echo "Uploading backend to VPS..."
-        sshpass -p "$VPS_PASS" scp -o StrictHostKeyChecking=no -r ./backend $VPS_USER@$VPS_HOST:/tmp/backend
-        
-        echo "Uploading deploy script..."
-        sshpass -p "$VPS_PASS" scp -o StrictHostKeyChecking=no /tmp/deploy.sh $VPS_USER@$VPS_HOST:/tmp/deploy.sh
-        
-        # Run deployment
-        echo "Running deployment on VPS..."
-        sshpass -p "$VPS_PASS" ssh -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST "bash /tmp/deploy.sh"
+        pm2 status
+        EOF
