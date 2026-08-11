@@ -1,0 +1,62 @@
+name: Setup HTTPS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  https-setup:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Setup HTTPS on VPS
+      env:
+        VPS_HOST: ${{ secrets.VPS_HOST }}
+        VPS_USER: ${{ secrets.VPS_USER }}
+        VPS_PASS: ${{ secrets.VPS_PASS }}
+      run: |
+        sudo apt-get install -y sshpass
+        
+        sshpass -p "$VPS_PASS" ssh -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST << 'EOF'
+        set -e
+        
+        echo "=== Installing nginx ==="
+        apt-get install -y nginx
+        
+        echo "=== Installing certbot ==="
+        apt-get install -y certbot python3-certbot-nginx
+        
+        echo "=== Writing nginx config ==="
+        cat > /etc/nginx/sites-available/live-platform << 'NGINX_CONF'
+        server {
+            listen 80;
+            server_name 100111000.xyz www.100111000.xyz;
+            
+            location / {
+                proxy_pass http://127.0.0.1:3001;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                proxy_read_timeout 86400;
+                proxy_send_timeout 86400;
+            }
+        }
+        NGINX_CONF
+        
+        # Enable site
+        ln -sf /etc/nginx/sites-available/live-platform /etc/nginx/sites-enabled/live-platform
+        rm -f /etc/nginx/sites-enabled/default
+        
+        # Test and reload nginx
+        nginx -t
+        systemctl reload nginx
+        
+        echo "=== Obtaining SSL certificate ==="
+        certbot --nginx -d 100111000.xyz -d www.100111000.xyz --non-interactive --agree-tos -m 18717798515@163.com --redirect
+        
+        echo "=== Done ==="
+        certbot certificates
+        EOF
