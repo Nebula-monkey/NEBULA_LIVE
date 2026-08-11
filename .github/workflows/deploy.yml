@@ -85,6 +85,10 @@ jobs:
         cp -r /tmp/frontend /opt/live-platform/frontend
         cp -r /tmp/backend /opt/live-platform/server
         
+        # Create required directories
+        mkdir -p /opt/live-platform/server/data
+        mkdir -p /opt/live-platform/server/uploads
+        
         # Stop existing pm2 process
         pm2 delete live-platform 2>/dev/null || true
         
@@ -101,4 +105,6 @@ jobs:
         
         echo "=== Deployment complete ==="
         pm2 status
+        sleep 3
+        pm2 logs live-platform --lines 20 --nostream
         EOF
