@@ -131,7 +131,7 @@ function createSocketIO(server, origin) {
           hostTransport: {
             id: hostTransport.id,
             iceParameters: hostTransport.iceParameters,
-            iceCandidates: hostTransport.iceCandidates,
+            iceCandidates: mediasoupService.tunnelizeCandidates(hostTransport.iceCandidates),
             dtlsParameters: hostTransport.dtlsParameters
           }
         });
@@ -248,7 +248,7 @@ function createSocketIO(server, origin) {
           viewerTransport: {
             id: viewerTransport.id,
             iceParameters: viewerTransport.iceParameters,
-            iceCandidates: viewerTransport.iceCandidates,
+            iceCandidates: mediasoupService.tunnelizeCandidates(viewerTransport.iceCandidates),
             dtlsParameters: viewerTransport.dtlsParameters
           },
           producers: producers.map(p => ({

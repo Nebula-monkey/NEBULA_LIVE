@@ -8,11 +8,13 @@ const next = require('next');
 const config = require('./config');
 const db = require('./db');
 const mediasoupService = require('./services/mediasoup');
+const tcpmux = require('./services/tcpmux');
 const { createSocketIO } = require('./services/socket');
 
 async function start() {
   await db.init();
   await mediasoupService.init();
+  tcpmux.start();
 
   const nextApp = next({
     dev: false,

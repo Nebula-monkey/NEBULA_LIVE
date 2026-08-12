@@ -1,5 +1,6 @@
 const mediasoup = require('mediasoup');
 const config = require('../config');
+const tcpmux = require('./tcpmux');
 
 let worker;
 let router;
@@ -70,7 +71,7 @@ async function createWebRtcTransport(listenIp) {
   // 中国方向线路对 UDP 媒体流干扰严重（ICE 可连通但 DTLS 握手失败），
   // 设置 MEDIASOUP_FORCE_TCP=1 强制媒体流走 TCP 传输
   const forceTcp = process.env.MEDIASOUP_FORCE_TCP === '1';
-  return await router.createWebRtcTransport({
+  const transport = await router.createWebRtcTransport({
     listenIps: [
       {
         ip: listenIp || config.node_ip,
@@ -82,6 +83,26 @@ async function createWebRtcTransport(listenIp) {
     preferTcp: true,
     maxIncomingBitrate: 2500000
   });
+
+  // 隘道模式：客户端网络只放行 443 端口时，由 nginx stream + tcpmux
+  // 把 443 上的 WebRTC-over-TCP 流量分流到真实端口（candidate 端口在信令发送时改写）
+  const tunnelPort = Number(process.env.MEDIASOUP_TUNNEL_PORT || 0);
+  if (forceTcp && tunnelPort) {
+    const ufrag = transport.iceParameters.usernameFragment;
+    tcpmux.register(ufrag, transport.tuple.localPort);
+    transport.on('close', () => tcpmux.unregister(ufrag));
+  }
+
+  return transport;
 }
 
-module.exports = { init, getRouter, createWebRtcTransport, getWorker: () => worker };
+// 隘道模式下把 ICE candidate 端口改写为隘道端口（443），仅用于发给客户端的信令
+function tunnelizeCandidates(candidates) {
+  const tunnelPort = Number(process.env.MEDIASOUP_TUNNEL_PORT || 0);
+  if (process.env.MEDIASOUP_FORCE_TCP === '1' && tunnelPort) {
+    return candidates.map(c => ({ ...c, port: tunnelPort }));
+  }
+  return candidates;
+}
+
+module.exports = { init, getRouter, createWebRtcTransport, tunnelizeCandidates, getWorker: () => worker };
