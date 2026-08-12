@@ -89,8 +89,12 @@ async function createWebRtcTransport(listenIp) {
   const tunnelPort = Number(process.env.MEDIASOUP_TUNNEL_PORT || 0);
   if (forceTcp && tunnelPort) {
     const ufrag = transport.iceParameters.usernameFragment;
-    tcpmux.register(ufrag, transport.tuple.localPort);
-    transport.on('close', () => tcpmux.unregister(ufrag));
+    // 真实监听端口从 ICE candidate 中取（新版 mediasoup 的 tuple 在 ICE 选中前为空）
+    const realPort = transport.iceCandidates[0]?.port;
+    if (ufrag && realPort) {
+      tcpmux.register(ufrag, realPort);
+      transport.on('close', () => tcpmux.unregister(ufrag));
+    }
   }
 
   return transport;
