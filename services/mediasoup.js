@@ -69,7 +69,9 @@ async function createWebRtcTransport(listenIp) {
   // 本地测试时保持 127.0.0.1 即可
   const announcedIp = process.env.MEDIASOUP_ANNOUNCED_IP || process.env.PUBLIC_IP || config.node_ip;
   // 中国方向线路对 UDP 媒体流干扰严重（ICE 可连通但 DTLS 握手失败），
-  // 设置 MEDIASOUP_FORCE_TCP=1 强制媒体流走 TCP 传输
+  // 设置 MEDIASOUP_FORCE_TCP=1 时只给客户端下发 TCP candidate（媒体经 443 隘道中转）。
+  // 注意：UDP 监听必须保留——新版 mediasoup 纯 TCP transport 返回的 tuple 为空，
+  // 库内部 parseTuple 未判空会直接抛错
   const forceTcp = process.env.MEDIASOUP_FORCE_TCP === '1';
   const transport = await router.createWebRtcTransport({
     listenIps: [
@@ -78,7 +80,7 @@ async function createWebRtcTransport(listenIp) {
         announcedIp
       }
     ],
-    enableUdp: !forceTcp,
+    enableUdp: true,
     enableTcp: true,
     preferTcp: true,
     maxIncomingBitrate: 2500000
@@ -89,8 +91,9 @@ async function createWebRtcTransport(listenIp) {
   const tunnelPort = Number(process.env.MEDIASOUP_TUNNEL_PORT || 0);
   if (forceTcp && tunnelPort) {
     const ufrag = transport.iceParameters.usernameFragment;
-    // 真实监听端口从 ICE candidate 中取（新版 mediasoup 的 tuple 在 ICE 选中前为空）
-    const realPort = transport.iceCandidates[0]?.port;
+    // 真实监听端口从 TCP candidate 中取（新版 mediasoup 的 tuple 在 ICE 选中前为空）
+    const tcpCandidate = transport.iceCandidates.find(c => c.protocol === 'tcp') || transport.iceCandidates[0];
+    const realPort = tcpCandidate?.port;
     if (ufrag && realPort) {
       tcpmux.register(ufrag, realPort);
       transport.on('close', () => tcpmux.unregister(ufrag));
@@ -100,11 +103,13 @@ async function createWebRtcTransport(listenIp) {
   return transport;
 }
 
-// 隘道模式下把 ICE candidate 端口改写为隘道端口（443），仅用于发给客户端的信令
+// 隘道模式下只给客户端下发 TCP candidate，并把端口改写为隘道端口（443）
 function tunnelizeCandidates(candidates) {
   const tunnelPort = Number(process.env.MEDIASOUP_TUNNEL_PORT || 0);
   if (process.env.MEDIASOUP_FORCE_TCP === '1' && tunnelPort) {
-    return candidates.map(c => ({ ...c, port: tunnelPort }));
+    return candidates
+      .filter(c => c.protocol === 'tcp')
+      .map(c => ({ ...c, port: tunnelPort }));
   }
   return candidates;
 }
