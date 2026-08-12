@@ -99,6 +99,7 @@ jobs:
         export NODE_IP=0.0.0.0
         export PORT=3001
         export MEDIASOUP_FORCE_TCP=1
+        export MEDIASOUP_TUNNEL_PORT=443
         
         pm2 start index.js --name live-platform
         pm2 save
