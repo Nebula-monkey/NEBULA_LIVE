@@ -98,6 +98,7 @@ jobs:
         export MEDIASOUP_ANNOUNCED_IP=$(curl -s ifconfig.me)
         export NODE_IP=0.0.0.0
         export PORT=3001
+        export MEDIASOUP_FORCE_TCP=1
         
         pm2 start index.js --name live-platform
         pm2 save
