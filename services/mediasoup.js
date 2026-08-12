@@ -67,6 +67,9 @@ async function createWebRtcTransport(listenIp) {
   // 公网部署时设置 MEDIASOUP_ANNOUNCED_IP/PUBLIC_IP 为服务器公网 IP，
   // 本地测试时保持 127.0.0.1 即可
   const announcedIp = process.env.MEDIASOUP_ANNOUNCED_IP || process.env.PUBLIC_IP || config.node_ip;
+  // 中国方向线路对 UDP 媒体流干扰严重（ICE 可连通但 DTLS 握手失败），
+  // 设置 MEDIASOUP_FORCE_TCP=1 强制媒体流走 TCP 传输
+  const forceTcp = process.env.MEDIASOUP_FORCE_TCP === '1';
   return await router.createWebRtcTransport({
     listenIps: [
       {
@@ -74,9 +77,9 @@ async function createWebRtcTransport(listenIp) {
         announcedIp
       }
     ],
-    enableUdp: true,
+    enableUdp: !forceTcp,
     enableTcp: true,
-    preferUdp: true,
+    preferTcp: true,
     maxIncomingBitrate: 2500000
   });
 }
